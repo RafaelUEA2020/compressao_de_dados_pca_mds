@@ -1,4 +1,8 @@
 ﻿# compressa de dados com PCA e MDS
+
+## link da apresentação
+https://docs.google.com/presentation/d/1NCQGGwGUWM6LM6UsPM3ZNIF9kO8UEeTHL6Q6hGL6eSU/edit?usp=sharing
+
 # 1. Representação da Informação (Quantidade vs. Qualidade)
 PCA (Variância: 23.76%): * Este valor é considerado baixo. Isso nos diz que seu dataset é complexo e as variáveis não são altamente correlacionadas de forma simples. Apenas dois "eixos" não são suficientes para explicar nem 1/4 da variação total.
 
