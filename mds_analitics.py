@@ -1,76 +1,76 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 from sklearn.manifold import MDS
 from sklearn.preprocessing import StandardScaler
 import os
 
-def aplicar_mds_generico(caminho_csv, n_componentes=2):
-    # 1. Carregar os dados
+def realizar_analise_completa_com_tabela(caminho_csv):
+    # 1. Carregamento e Preparação Universal
     if not os.path.exists(caminho_csv):
-        print(f"Erro: O arquivo {caminho_csv} não foi encontrado.")
+        print(f"Erro: Arquivo {caminho_csv} não encontrado.")
         return
-    
+
     df = pd.read_csv(caminho_csv)
-    print(f"--- Processando arquivo: {caminho_csv} ---")
-    print(f"Shape original: {df.shape}")
-
-    # 2. Filtragem Automática de Dados Numéricos
-    # Tentamos converter tudo o que for possível para numérico
-    # Colunas que são puramente texto (IDs, Nomes, Datas complexas) serão ignoradas
-    df_numeric = df.apply(pd.to_numeric, errors='coerce')
+    nome_base = os.path.splitext(os.path.basename(caminho_csv))[0]
     
-    # Removemos colunas que resultaram apenas em NaNs (eram textos não convertíveis)
-    df_numeric = df_numeric.dropna(axis=1, how='all')
+    # Filtra apenas colunas numéricas e trata NaNs com a mediana
+    df_numeric = df.apply(pd.to_numeric, errors='coerce').dropna(axis=1, how='all')
+    df_clean = df_numeric.fillna(df_numeric.median())
     
-    # 3. Tratamento de Valores Ausentes (Imputação pela Mediana)
-    if df_numeric.isnull().values.any():
-        print("Valores ausentes detectados. Aplicando imputação pela mediana...")
-        df_clean = df_numeric.fillna(df_numeric.median())
-    else:
-        df_clean = df_numeric
+    # --- NOVA ETAPA: EXPORTAR TABELA UTILIZADA ---
+    nome_tabela = f"variaveis_numericas_{nome_base}.csv"
+    df_clean.to_csv(nome_tabela, index=False)
+    print(f"Tabela de variáveis numéricas exportada: {nome_tabela}")
 
-    # Verificação de segurança: existem colunas suficientes?
-    if df_clean.shape[1] < n_componentes:
-        print("Erro: O dataset não possui colunas numéricas suficientes para redução.")
-        return
-
-    # 4. Padronização
+    # Padronização (Crucial para PCA e MDS)
     scaler = StandardScaler()
     scaled_data = scaler.fit_transform(df_clean)
 
-    # 5. Aplicação do MDS
-    print(f"Executando MDS para {n_componentes} componentes...")
-    mds = MDS(n_components=n_componentes, metric=True, random_state=42, normalized_stress='auto')
+    # --- PARTE 1: RESULTADOS DEDICADOS AO PCA ---
+    pca = PCA()
+    pca_data = pca.fit_transform(scaled_data)
+    exp_var = pca.explained_variance_ratio_
+    cum_var = np.cumsum(exp_var)
+
+    # Gráfico de Variância
+    plt.figure(figsize=(10, 5))
+    plt.bar(range(1, len(exp_var)+1), exp_var, alpha=0.5, label='Variância Individual')
+    plt.step(range(1, len(cum_var)+1), cum_var, where='mid', label='Variância Acumulada', color='red')
+    plt.title(f'PCA - Variância Explicada ({nome_base})')
+    plt.ylabel('Razão de Variância')
+    plt.legend()
+    plt.savefig('pca_detalhado_variancia.png')
+    plt.close()
+
+    # --- PARTE 2: RESULTADOS DEDICADOS AO MDS ---
+    mds = MDS(n_components=2, metric=True, random_state=42, normalized_stress='auto')
     mds_data = mds.fit_transform(scaled_data)
-
-    # 6. Cálculo do Stress
     stress = mds.stress_
-    print(f"Stress final do modelo: {stress:.4f}")
 
-    # 7. Visualização
-    plt.figure(figsize=(10, 7))
+    # Projeção MDS
+    plt.figure(figsize=(8, 6))
+    plt.scatter(mds_data[:, 0], mds_data[:, 1], c='salmon', edgecolors='k', alpha=0.7)
+    plt.title(f'MDS - Projeção 2D (Stress: {stress:.4f})')
+    plt.savefig('mds_detalhado_projecao.png')
+    plt.close()
+
+    # --- PARTE 3: PAINEL COMPARATIVO LADO A LADO ---
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
     
-    # Se houver uma coluna de texto original (ex: nomes de cidades ou categorias), 
-    # podemos usá-la para legenda, caso contrário, usamos o índice
-    scatter = plt.scatter(mds_data[:, 0], mds_data[:, 1], c='salmon', edgecolors='k', alpha=0.7)
+    ax1.scatter(pca_data[:, 0], pca_data[:, 1], c='skyblue', edgecolors='k', alpha=0.7)
+    ax1.set_title(f'PCA (Variância 2D: {(exp_var[0]+exp_var[1])*100:.2f}%)')
 
-    # Lógica de anotação inteligente (limita a 20 pontos para não poluir)
-    passo = max(1, len(mds_data) // 20)
-    for i in range(0, len(mds_data), passo):
-        plt.annotate(f"Id:{df.index[i]}", (mds_data[i, 0], mds_data[i, 1]), 
-                     fontsize=8, alpha=0.7, xytext=(5,5), textcoords='offset points')
+    ax2.scatter(mds_data[:, 0], mds_data[:, 1], c='salmon', edgecolors='k', alpha=0.7)
+    ax2.set_title(f'MDS (Stress: {stress:.4f})')
 
-    plt.title(f'Visualização MDS - {os.path.basename(caminho_csv)}')
-    plt.xlabel('Dimensão 1')
-    plt.ylabel('Dimensão 2')
-    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.suptitle(f'Painel Comparativo: {nome_base}', fontsize=16)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig('comparativo_final_pca_mds.png')
+    plt.close()
     
-    nome_saida = f"mds_result_{os.path.basename(caminho_csv)}.png"
-    plt.savefig(nome_saida)
-    print(f"Gráfico salvo como: {nome_saida}")
-    plt.show()
+    return nome_tabela
 
-# --- Exemplo de uso ---
-# Basta substituir pelo nome do seu arquivo atual
-aplicar_mds_generico('dados/sinistro_transito_ocorrencia.csv')
+# Execução
+realizar_analise_completa_com_tabela('dados/sinistros_transito_ocorrencia.csv')
