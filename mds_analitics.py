@@ -3,46 +3,74 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.manifold import MDS
 from sklearn.preprocessing import StandardScaler
+import os
 
-# 1. Carregar e Limpar os dados (mesmo processo do PCA)
-df = pd.read_csv('dados\climate_change_dataset.csv')
-df_numeric = df.drop(columns=['Year', 'Month'], errors='ignore')
+def aplicar_mds_generico(caminho_csv, n_componentes=2):
+    # 1. Carregar os dados
+    if not os.path.exists(caminho_csv):
+        print(f"Erro: O arquivo {caminho_csv} não foi encontrado.")
+        return
+    
+    df = pd.read_csv(caminho_csv)
+    print(f"--- Processando arquivo: {caminho_csv} ---")
+    print(f"Shape original: {df.shape}")
 
-for col in df_numeric.columns:
-    df_numeric[col] = pd.to_numeric(df_numeric[col], errors='coerce')
+    # 2. Filtragem Automática de Dados Numéricos
+    # Tentamos converter tudo o que for possível para numérico
+    # Colunas que são puramente texto (IDs, Nomes, Datas complexas) serão ignoradas
+    df_numeric = df.apply(pd.to_numeric, errors='coerce')
+    
+    # Removemos colunas que resultaram apenas em NaNs (eram textos não convertíveis)
+    df_numeric = df_numeric.dropna(axis=1, how='all')
+    
+    # 3. Tratamento de Valores Ausentes (Imputação pela Mediana)
+    if df_numeric.isnull().values.any():
+        print("Valores ausentes detectados. Aplicando imputação pela mediana...")
+        df_clean = df_numeric.fillna(df_numeric.median())
+    else:
+        df_clean = df_numeric
 
-# Imputação pela mediana para evitar NaNs
-df_clean = df_numeric.fillna(df_numeric.median())
+    # Verificação de segurança: existem colunas suficientes?
+    if df_clean.shape[1] < n_componentes:
+        print("Erro: O dataset não possui colunas numéricas suficientes para redução.")
+        return
 
-# 2. Padronização
-# O MDS métrico geralmente utiliza distâncias euclidianas. 
-# Escalonar os dados é crucial para que uma variável (como CO2) não pese mais que outra (como Temp)
-scaler = StandardScaler()
-scaled_data = scaler.fit_transform(df_clean)
+    # 4. Padronização
+    scaler = StandardScaler()
+    scaled_data = scaler.fit_transform(df_clean)
 
-# 3. Aplicação do MDS
-# n_components=2 para visualização em 2D
-# metric=True realiza o MDS métrico (similar ao PCA, mas focado em distâncias)
-mds = MDS(n_components=2, metric=True, random_state=42, normalized_stress='auto')
-mds_data = mds.fit_transform(scaled_data)
+    # 5. Aplicação do MDS
+    print(f"Executando MDS para {n_componentes} componentes...")
+    mds = MDS(n_components=n_componentes, metric=True, random_state=42, normalized_stress='auto')
+    mds_data = mds.fit_transform(scaled_data)
 
-# 4. Cálculo do Stress (Medida de qualidade do ajuste)
-# O Stress indica o quanto da estrutura de distância original foi "perdida" na redução
-stress = mds.stress_
-print(f"Stress final do modelo: {stress:.2f}")
+    # 6. Cálculo do Stress
+    stress = mds.stress_
+    print(f"Stress final do modelo: {stress:.4f}")
 
-# 5. Visualização
-plt.figure(figsize=(8, 6))
-plt.scatter(mds_data[:, 0], mds_data[:, 1], c='salmon', edgecolors='k', alpha=0.7)
+    # 7. Visualização
+    plt.figure(figsize=(10, 7))
+    
+    # Se houver uma coluna de texto original (ex: nomes de cidades ou categorias), 
+    # podemos usá-la para legenda, caso contrário, usamos o índice
+    scatter = plt.scatter(mds_data[:, 0], mds_data[:, 1], c='salmon', edgecolors='k', alpha=0.7)
 
-# Adicionando rótulos simples para identificar os pontos (opcional)
-for i in range(len(mds_data)):
-    if i % 5 == 0: # Rótula apenas alguns pontos para não poluir o gráfico
-        plt.annotate(f"P{i}", (mds_data[i, 0], mds_data[i, 1]), fontsize=9, alpha=0.8)
+    # Lógica de anotação inteligente (limita a 20 pontos para não poluir)
+    passo = max(1, len(mds_data) // 20)
+    for i in range(0, len(mds_data), passo):
+        plt.annotate(f"Id:{df.index[i]}", (mds_data[i, 0], mds_data[i, 1]), 
+                     fontsize=8, alpha=0.7, xytext=(5,5), textcoords='offset points')
 
-plt.title('Escalonamento Multidimensional (MDS) - Clima')
-plt.xlabel('Dimensão 1')
-plt.ylabel('Dimensão 2')
-plt.grid(True, linestyle='--', alpha=0.6)
-plt.savefig('mds_plot.png')
-plt.show()
+    plt.title(f'Visualização MDS - {os.path.basename(caminho_csv)}')
+    plt.xlabel('Dimensão 1')
+    plt.ylabel('Dimensão 2')
+    plt.grid(True, linestyle='--', alpha=0.5)
+    
+    nome_saida = f"mds_result_{os.path.basename(caminho_csv)}.png"
+    plt.savefig(nome_saida)
+    print(f"Gráfico salvo como: {nome_saida}")
+    plt.show()
+
+# --- Exemplo de uso ---
+# Basta substituir pelo nome do seu arquivo atual
+aplicar_mds_generico('dados/sinistro_transito_ocorrencia.csv')
